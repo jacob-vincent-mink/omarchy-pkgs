@@ -1,7 +1,7 @@
 pkgbase = omawake-bin
 	pkgdesc = Configurable local wake-word daemon (pre-built binary)
 	pkgver = 0.0.2
-	pkgrel = 1
+	pkgrel = 2
 	url = https://github.com/jacob-vincent-mink/omawake
 	install = omawake-bin.install
 	arch = x86_64
@@ -19,6 +19,10 @@ pkgbase = omawake-bin
 	provides = omawake=0.0.2
 	conflicts = omawake
 	options = !strip
+	source = package-remove
+	source = remove-user-services.hook
+	sha256sums = 2a75e647ee7882170e5d62b522f64bf55ca42db89df95e45af609e5700111a44
+	sha256sums = a0bb2e9de807bdb2cc8d0076eac3c21555c910eb8baa06acfba18fea716b9014
 	source_x86_64 = omawake-0.0.2-linux-x86_64.tar.xz::https://github.com/jacob-vincent-mink/omawake/releases/download/v0.0.2/omawake-0.0.2-linux-x86_64.tar.xz
 	sha256sums_x86_64 = 94f0677eb497babd351cb154e9adf057e4b796efe0241d809a7f7cf84742a515
 	source_aarch64 = omawake-0.0.2-linux-aarch64.tar.xz::https://github.com/jacob-vincent-mink/omawake/releases/download/v0.0.2/omawake-0.0.2-linux-aarch64.tar.xz

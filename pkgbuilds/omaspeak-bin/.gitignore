@@ -5,3 +5,5 @@
 !omaspeak-bin.install
 !.omarchy/
 !.omarchy/package.json
+!package-remove
+!remove-user-services.hook

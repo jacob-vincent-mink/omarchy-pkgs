@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Removal regression fixtures. No real systemd manager, user home or package is touched."""
+import os
+from pathlib import Path
+import socket
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class Removal(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="oma-removal-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.home = self.root / "home"
+        self.runtime = self.root / "runtime"
+        self.units = self.home / ".config/systemd/user"
+        self.units.mkdir(parents=True)
+        self.runtime.mkdir()
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.log = self.root / "calls"
+        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", CALLS=str(self.log))
+        self.executable("systemctl", '''#!/bin/bash
+printf '%s\\n' "$*" >> "$CALLS"
+case "$*" in
+  *show-environment*) [[ -z ${MANAGER_FAIL-} ]] || exit 1; echo "XDG_CONFIG_HOME=${CONFIG_HOME-}" ;;
+  *property=ExecStart*) echo "${EFFECTIVE-}" ;;
+  *property=LoadState*) echo "${LOAD_STATE-loaded}" ;;
+  *" stop "*) [[ -z ${STOP_FAIL-} ]] || exit 1 ;;
+esac
+''')
+
+    def executable(self, name, source):
+        path = self.bin / name
+        path.write_text(source)
+        path.chmod(0o755)
+
+    def online(self):
+        sock = socket.socket(socket.AF_UNIX)
+        sock.bind(str(self.runtime / "bus"))
+        self.addCleanup(sock.close)
+
+    def install(self, app, binary=None):
+        unit = self.units / f"{app}.service"
+        unit.write_text(f'[Service]\nExecStart="{binary or "/usr/bin/" + app}" --config "{self.home}/config.toml" daemon\n')
+        target = self.units / "graphical-session.target.wants"
+        target.mkdir(exist_ok=True)
+        link = target / unit.name
+        link.symlink_to(f"../{unit.name}")
+        return unit, link
+
+    def run_remove(self, app):
+        return subprocess.run(["bash", str(ROOT / f"pkgbuilds/{app}-bin/package-remove"),
+                               "--user", app, str(self.home), str(self.runtime)],
+                              env=self.env, text=True, capture_output=True)
+
+    def test_logged_out_users_and_data_preservation(self):
+        for app in ("omawake", "omaspeak"):
+            unit, link = self.install(app)
+            config = self.home / f"{app}.toml"
+            config.write_text("keep settings and models")
+            result = self.run_remove(app)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(unit.exists())
+            self.assertFalse(link.is_symlink())
+            self.assertEqual(config.read_text(), "keep settings and models")
+        self.assertFalse(self.log.exists(), "offline cleanup contacted systemd")
+
+    def test_active_unit_is_stopped_before_removing_it(self):
+        self.online()
+        for app in ("omawake", "omaspeak"):
+            unit, link = self.install(app)
+            self.env["EFFECTIVE"] = f"{{ path=/usr/bin/{app} ; argv[]=/usr/bin/{app} daemon ; }}"
+            result = self.run_remove(app)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(unit.exists())
+            self.assertFalse(link.is_symlink())
+            calls = self.log.read_text().splitlines()
+            self.assertLess(calls.index(f"--user stop {app}.service"), calls.index(f"--user disable {app}.service"))
+            self.assertEqual(calls[-1], "--user daemon-reload")
+
+    def test_failed_stop_prevents_unit_deletion_and_fails_hook(self):
+        self.online()
+        unit, link = self.install("omawake")
+        self.env.update(STOP_FAIL="1", EFFECTIVE="{ path=/usr/bin/omawake ; }")
+        result = self.run_remove("omawake")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(unit.exists())
+        self.assertTrue(link.is_symlink())
+        self.assertNotIn("disable", self.log.read_text())
+
+    def test_custom_build_and_mask_are_preserved(self):
+        unit, link = self.install("omawake", "/home/user/dev/omawake")
+        self.assertEqual(self.run_remove("omawake").returncode, 0)
+        self.assertTrue(unit.exists())
+        self.assertTrue(link.is_symlink())
+        unit.unlink()
+        unit.symlink_to("/dev/null")
+        self.assertEqual(self.run_remove("omawake").returncode, 0)
+        self.assertTrue(unit.is_symlink())
+        self.assertFalse(self.log.exists())
+
+    def test_effective_override_and_missing_online_unit(self):
+        self.online()
+        unit, _ = self.install("omaspeak")
+        self.env["EFFECTIVE"] = "{ path=/home/user/development/omaspeak ; }"
+        self.assertEqual(self.run_remove("omaspeak").returncode, 0)
+        self.assertTrue(unit.exists())
+        self.assertNotIn(" stop ", self.log.read_text())
+        unit.unlink()
+        self.env.update(EFFECTIVE="", LOAD_STATE="not-found")
+        self.assertEqual(self.run_remove("omaspeak").returncode, 0)
+        self.assertNotIn(" stop ", self.log.read_text())
+
+    def test_manager_config_home_and_unavailable_manager(self):
+        self.online()
+        default = self.units
+        self.units = self.home / "custom-config/systemd/user"
+        self.units.mkdir(parents=True)
+        unit, link = self.install("omawake")
+        self.env.update(CONFIG_HOME=str(self.home / "custom-config"), MANAGER_FAIL="1")
+        self.assertNotEqual(self.run_remove("omawake").returncode, 0)
+        self.assertTrue(unit.exists())
+        del self.env["MANAGER_FAIL"]
+        self.assertEqual(self.run_remove("omawake").returncode, 0)
+        self.assertFalse(unit.exists())
+        self.assertFalse(link.is_symlink())
+        self.assertTrue(default.exists())
+
+    def test_root_dispatch_drops_privileges_and_propagates_failure(self):
+        passwd = f"fixture:x:12345:12345::{self.home}:/bin/bash"
+        self.executable("getent", f"#!/bin/sh\nprintf '%s\\n' '{passwd}'\n")
+        self.executable("runuser", '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\nexit 1\n')
+        result = subprocess.run(["bash", str(ROOT / "pkgbuilds/omawake-bin/package-remove"), "omawake"], env=self.env, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("-u fixture -- env", self.log.read_text())
+        self.assertIn("--user omawake", self.log.read_text())
+
+    def test_offline_executable_overrides_are_preserved(self):
+        unit, link = self.install("omawake")
+        dropins = Path(str(unit) + ".d")
+        dropins.mkdir()
+        (dropins / "override.conf").write_text("[Service]\nExecStart=\nExecStart=/home/user/build/omawake daemon\n")
+        self.assertEqual(self.run_remove("omawake").returncode, 0)
+        self.assertTrue(unit.exists())
+        self.assertTrue(link.is_symlink())
+
+    def test_packaging_installs_hooks_and_helpers(self):
+        import shutil
+        for app, version in (("omawake", "0.0.2"), ("omaspeak", "0.0.1")):
+            source = self.root / app / "src"
+            package = self.root / app / "pkg"
+            release = source / f"{app}-{version}-linux-x86_64"
+            release.mkdir(parents=True)
+            for path in [app, "lib/libaudiocpp.so.0.1.0", f"packaging/systemd/{app}.service",
+                         "README.md", "INSTALL.md", "ACCELERATOR_SETUP.md", "CHANGELOG.md",
+                         "RELEASE_NOTES.md", "DEMO.md", "RUNTIME.md", "config.example.toml",
+                         "licenses/LICENSE", "assets/fixture", "benchmarks/fixture"]:
+                target = release / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("fixture")
+            directory = ROOT / f"pkgbuilds/{app}-bin"
+            for name in ("package-remove", "remove-user-services.hook"):
+                shutil.copyfile(directory / name, source / name)
+            env = dict(self.env, srcdir=str(source), pkgdir=str(package), CARCH="x86_64")
+            result = subprocess.run(["bash", "-c", 'source "$1"; package', "package-fixture", str(directory / "PKGBUILD")], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            helper = package / f"usr/lib/{app}/package-remove"
+            self.assertEqual(helper.read_bytes(), (directory / "package-remove").read_bytes())
+            self.assertEqual(helper.stat().st_mode & 0o777, 0o755)
+            self.assertTrue((package / f"usr/share/libalpm/hooks/30-{app}-remove-user-services.hook").exists())
+
+    def test_hook_contract_and_package_release(self):
+        scripts = []
+        for app in ("omawake", "omaspeak"):
+            directory = ROOT / f"pkgbuilds/{app}-bin"
+            hook = (directory / "remove-user-services.hook").read_text()
+            self.assertIn("Operation = Remove", hook)
+            self.assertNotIn("Operation = Upgrade", hook)
+            self.assertIn("When = PreTransaction", hook)
+            self.assertIn("AbortOnFail", hook)
+            self.assertIn(f"Exec = /usr/lib/{app}/package-remove {app}", hook)
+            self.assertIn("pkgrel=2", (directory / "PKGBUILD").read_text())
+            scripts.append((directory / "package-remove").read_bytes())
+        self.assertEqual(*scripts)
+
+
+if __name__ == "__main__":
+    unittest.main()
