@@ -4,7 +4,7 @@ pkgname=omaspeak-bin
 _pkgname=${pkgname%-bin}
 pkgver=0.0.3
 _upstream_ver=0.0.3
-pkgrel=1
+pkgrel=2
 pkgdesc='Local-first text-to-speech application and daemon (pre-built binary)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/jacob-vincent-mink/omaspeak'
@@ -27,6 +27,10 @@ conflicts=("${_pkgname}")
 install="${pkgname}.install"
 options=('!strip' '!debug')
 
+source=('package-remove' 'remove-user-services.hook')
+sha256sums=('2a75e647ee7882170e5d62b522f64bf55ca42db89df95e45af609e5700111a44'
+            '9f1a0c2f5031fcd5905de77643a8727b792e07c582c09c2ba179f0714f118b20')
+
 source_x86_64=("${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz")
 source_aarch64=("${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz")
 
@@ -34,6 +38,10 @@ sha256sums_x86_64=('c72428bf6989582b5aa802f39e9390e4cacf26f7fbfacf76645118286c7d
 sha256sums_aarch64=('88fc4ea8c275b9d5b9d41602d32dbca77ee30de0fc7dcbc06ad0e819fd41545a')
 
 package() {
+    install -Dm755 "${srcdir}/package-remove" "${pkgdir}/usr/lib/${_pkgname}/package-remove"
+    install -Dm644 "${srcdir}/remove-user-services.hook" \
+        "${pkgdir}/usr/share/libalpm/hooks/30-${_pkgname}-remove-user-services.hook"
+
     local release_root="${srcdir}/${_pkgname}-${_upstream_ver}-linux-${CARCH}"
 
     install -Dm755 "${release_root}/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"

@@ -4,7 +4,7 @@ pkgname=omawake-bin
 _pkgname=${pkgname%-bin}
 pkgver=0.0.3
 _upstream_ver=0.0.3
-pkgrel=1
+pkgrel=2
 pkgdesc='Configurable local wake-word daemon (pre-built binary)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/jacob-vincent-mink/omawake'
@@ -27,6 +27,10 @@ conflicts=("${_pkgname}")
 install="${pkgname}.install"
 options=('!strip' '!debug')
 
+source=('package-remove' 'remove-user-services.hook')
+sha256sums=('2a75e647ee7882170e5d62b522f64bf55ca42db89df95e45af609e5700111a44'
+            'a0bb2e9de807bdb2cc8d0076eac3c21555c910eb8baa06acfba18fea716b9014')
+
 source_x86_64=("${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz")
 source_aarch64=("${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz")
 
@@ -34,6 +38,10 @@ sha256sums_x86_64=('fa374341f60760b04c9a97d76f7ad2679463f5b2b673ee6d9c1ceee97d3f
 sha256sums_aarch64=('384eb11872c873a33332acf51f567dc4d4e327e57563b61056e4d0aa7fe470eb')
 
 package() {
+    install -Dm755 "${srcdir}/package-remove" "${pkgdir}/usr/lib/${_pkgname}/package-remove"
+    install -Dm644 "${srcdir}/remove-user-services.hook" \
+        "${pkgdir}/usr/share/libalpm/hooks/30-${_pkgname}-remove-user-services.hook"
+
     local release_root="${srcdir}/${_pkgname}-${_upstream_ver}-linux-${CARCH}"
 
     install -Dm755 "${release_root}/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"
