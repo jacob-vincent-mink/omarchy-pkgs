@@ -2,8 +2,8 @@
 
 pkgname=omaspeak-bin
 _pkgname=${pkgname%-bin}
-pkgver=0.0.2
-_upstream_ver=0.0.2
+pkgver=0.0.3.rc.1
+_upstream_ver=0.0.3-rc.1
 pkgrel=1
 pkgdesc='Local-first text-to-speech application and daemon (pre-built binary)'
 arch=('x86_64' 'aarch64')
@@ -30,19 +30,13 @@ options=('!strip' '!debug')
 source_x86_64=("${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz")
 source_aarch64=("${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz")
 
-sha256sums_x86_64=('138f34b39a57621e6628a2ec912d992595a6adaffdc0dbdd318debcda148a4cd')
-sha256sums_aarch64=('a2c460674d4ec60f5dc46f1fa15e5aff065ee2fdc92f74435ae764403ae546ff')
+sha256sums_x86_64=('2a05e300ecd0d84cea0ca9ff79067ecb351040687bcc545adac576a4f158fbb6')
+sha256sums_aarch64=('47468500450dc8e988d2a8d396bde8ef7fd7f0f757a0ace4556187bd5d9a977b')
 
 package() {
     local release_root="${srcdir}/${_pkgname}-${_upstream_ver}-linux-${CARCH}"
 
     install -Dm755 "${release_root}/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"
-
-    # Static phonemizer data for the Kokoro family; the engine searches for
-    # it beside the executable (catalog-managed placement lands upstream).
-    install -Dm644 \
-        "${release_root}/espeak-ng-data.bin" \
-        "${pkgdir}/usr/lib/${_pkgname}/espeak-ng-data.bin"
 
     install -Dm755 \
         "${release_root}/lib/libaudiocpp.so.0.1.0" \
