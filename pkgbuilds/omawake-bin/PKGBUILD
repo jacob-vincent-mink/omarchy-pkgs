@@ -2,8 +2,8 @@
 
 pkgname=omawake-bin
 _pkgname=${pkgname%-bin}
-pkgver=0.0.2
-_upstream_ver=0.0.2
+pkgver=0.0.3
+_upstream_ver=0.0.3
 pkgrel=1
 pkgdesc='Configurable local wake-word daemon (pre-built binary)'
 arch=('x86_64' 'aarch64')
@@ -30,8 +30,8 @@ options=('!strip' '!debug')
 source_x86_64=("${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz")
 source_aarch64=("${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-aarch64.tar.xz")
 
-sha256sums_x86_64=('94f0677eb497babd351cb154e9adf057e4b796efe0241d809a7f7cf84742a515')
-sha256sums_aarch64=('acb359b21bbe4909b13c18a0de63f8106c6b254943074b57d8fd70af41421659')
+sha256sums_x86_64=('fa374341f60760b04c9a97d76f7ad2679463f5b2b673ee6d9c1ceee97d3f0669')
+sha256sums_aarch64=('384eb11872c873a33332acf51f567dc4d4e327e57563b61056e4d0aa7fe470eb')
 
 package() {
     local release_root="${srcdir}/${_pkgname}-${_upstream_ver}-linux-${CARCH}"
