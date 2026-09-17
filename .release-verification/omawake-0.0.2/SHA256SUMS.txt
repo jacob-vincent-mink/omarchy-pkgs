@@ -1,2 +1,0 @@
-acb359b21bbe4909b13c18a0de63f8106c6b254943074b57d8fd70af41421659  omawake-0.0.2-linux-aarch64.tar.xz
-94f0677eb497babd351cb154e9adf057e4b796efe0241d809a7f7cf84742a515  omawake-0.0.2-linux-x86_64.tar.xz
