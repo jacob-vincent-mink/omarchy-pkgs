@@ -151,7 +151,7 @@ esac
 
     def test_packaging_installs_hooks_and_helpers(self):
         import shutil
-        for app, version in (("omawake", "0.0.2"), ("omaspeak", "0.0.1")):
+        for app, version in (("omawake", "0.0.3"), ("omaspeak", "0.0.3")):
             source = self.root / app / "src"
             package = self.root / app / "pkg"
             release = source / f"{app}-{version}-linux-x86_64"
