@@ -38,6 +38,12 @@ package() {
 
     install -Dm755 "${release_root}/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"
 
+    # Static phonemizer data for the Kokoro family; the engine searches for
+    # it beside the executable (catalog-managed placement lands upstream).
+    install -Dm644 \
+        "${release_root}/espeak-ng-data.bin" \
+        "${pkgdir}/usr/lib/${_pkgname}/espeak-ng-data.bin"
+
     install -Dm755 \
         "${release_root}/lib/libaudiocpp.so.0.1.0" \
         "${pkgdir}/usr/lib/${_pkgname}/libaudiocpp.so.0.1.0"

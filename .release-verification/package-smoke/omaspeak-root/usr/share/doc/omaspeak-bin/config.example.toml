@@ -1,0 +1,29 @@
+[backend]
+kind = "audiocpp"
+runtime = "default" # default | cuda | vulkan | hip | openvino
+device = "cpu"      # cpu for default; gpu/auto for accelerators; cpu/gpu/npu/auto for OpenVINO
+threads = 2
+fallback = "error"  # error | cpu; fallback stays within the selected provider/model
+# device_id = 0
+# library = "/opt/audiocpp/lib/libaudiocpp.so"
+# library_dirs = ["/opt/audiocpp/lib"]
+# openvino_library = "/opt/intel/openvino/runtime/lib/intel64/libopenvino_c.so"
+# openvino_plugins = "/opt/intel/openvino/runtime/lib/intel64/plugins.xml"
+
+[backend.options]
+# audio.cpp options use a scope: load.NAME, session.NAME, or request.NAME.
+# Direct OpenVINO options are passed as device properties.
+
+[model]
+family = "supertonic"
+name = "supertonic-3-gguf"
+directory = ""
+file = "supertonic-3-orig.gguf"
+language = "en"
+steps = 8
+voice = 0 # M1-M5 = 0-4, F1-F5 = 5-9
+
+[model.options]
+
+[daemon]
+max_text_bytes = 65536

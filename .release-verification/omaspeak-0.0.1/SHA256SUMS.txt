@@ -1,0 +1,2 @@
+8a0d7728d0b6d3f447ab7a616389fc8c54a0617f14922b33593ca60b425deb8d  omaspeak-0.0.1-linux-aarch64.tar.xz
+9e318960fb15fdf955efbb8dda9bc8eb2b9d0932a9acd9e31b85bf3492ca78ea  omaspeak-0.0.1-linux-x86_64.tar.xz
