@@ -4,7 +4,7 @@ pkgname=omaspeak-bin
 _pkgname=${pkgname%-bin}
 pkgver=0.0.3
 _upstream_ver=0.0.3
-pkgrel=2
+pkgrel=3
 pkgdesc='Local-first text-to-speech application and daemon (pre-built binary)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/jacob-vincent-mink/omaspeak'
@@ -28,7 +28,7 @@ install="${pkgname}.install"
 options=('!strip' '!debug')
 
 source=('package-remove' 'remove-user-services.hook')
-sha256sums=('2a75e647ee7882170e5d62b522f64bf55ca42db89df95e45af609e5700111a44'
+sha256sums=('4465e1bb3fcfc09dda69caee19c182f7dbdbd3f69bcd4e3dd6de3e2898bce5f1'
             '9f1a0c2f5031fcd5905de77643a8727b792e07c582c09c2ba179f0714f118b20')
 
 source_x86_64=("${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz")

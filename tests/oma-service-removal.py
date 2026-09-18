@@ -30,6 +30,11 @@ case "$*" in
   *show-environment*) [[ -z ${MANAGER_FAIL-} ]] || exit 1; echo "XDG_CONFIG_HOME=${CONFIG_HOME-}" ;;
   *property=ExecStart*) echo "${EFFECTIVE-}" ;;
   *property=LoadState*) echo "${LOAD_STATE-loaded}" ;;
+  # A unit that failed stays failed after it is stopped, and systemd refuses
+  # reset-failed for every other state, reporting the unit as not loaded.
+  *property=ActiveState*) echo "${ACTIVE_STATE-inactive}" ;;
+  *" reset-failed "*) [[ ${ACTIVE_STATE-inactive} == failed && -z ${RESET_FAIL-} ]] || {
+      printf 'Failed to reset failed state of unit: Unit is not loaded.\n' >&2; exit 1; } ;;
   *" stop "*) [[ -z ${STOP_FAIL-} ]] || exit 1 ;;
 esac
 ''')
@@ -54,6 +59,7 @@ esac
         return unit, link
 
     def run_remove(self, app):
+        self.log.unlink(missing_ok=True)  # Every run is judged on its own calls.
         return subprocess.run(["bash", str(ROOT / f"pkgbuilds/{app}-bin/package-remove"),
                                "--user", app, str(self.home), str(self.runtime)],
                               env=self.env, text=True, capture_output=True)
@@ -92,6 +98,52 @@ esac
         self.assertTrue(unit.exists())
         self.assertTrue(link.is_symlink())
         self.assertNotIn("disable", self.log.read_text())
+
+    def test_reset_failed_is_requested_only_for_a_unit_that_failed(self):
+        self.online()
+        for app in ("omawake", "omaspeak"):
+            unit, link = self.install(app)
+            self.env["EFFECTIVE"] = f"{{ path=/usr/bin/{app} ; argv[]=/usr/bin/{app} daemon ; }}"
+            # A loaded unit that never failed is not failed, and asking systemd to
+            # reset it fails with "Unit is not loaded": that must not abort removal.
+            self.env["ACTIVE_STATE"] = "active"
+            result = self.run_remove(app)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = [call for call in self.log.read_text().splitlines() if call.startswith("--user")]
+            self.assertNotIn(f"--user reset-failed {app}.service", calls)
+            # Reading the manager's state is welcome; the only changes asked for
+            # are the stop, the disable and the reload that follow them.
+            self.assertEqual([call for call in calls
+                              if "show-environment" not in call and "--property=" not in call],
+                             [f"--user stop {app}.service",
+                              f"--user disable {app}.service", "--user daemon-reload"])
+            self.assertFalse(unit.exists())
+            self.assertFalse(link.is_symlink())
+
+            # A unit that failed does keep that state once stopped, and there the
+            # reset belongs between stopping the service and disabling the unit.
+            unit, link = self.install(app)
+            self.env["ACTIVE_STATE"] = "failed"
+            result = self.run_remove(app)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = self.log.read_text().splitlines()
+            reset = f"--user reset-failed {app}.service"
+            self.assertIn(reset, calls)
+            self.assertLess(calls.index(f"--user stop {app}.service"), calls.index(reset))
+            self.assertLess(calls.index(reset), calls.index(f"--user disable {app}.service"))
+            self.assertFalse(unit.exists())
+            self.assertFalse(link.is_symlink())
+        del self.env["ACTIVE_STATE"]
+
+    def test_reset_refused_by_a_healthy_manager_still_fails_the_transaction(self):
+        self.online()
+        unit, link = self.install("omaspeak")
+        self.env.update(EFFECTIVE="{ path=/usr/bin/omaspeak ; }",
+                        ACTIVE_STATE="failed", RESET_FAIL="1")
+        result = self.run_remove("omaspeak")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(unit.exists())
+        self.assertTrue(link.is_symlink())
 
     def test_custom_build_and_mask_are_preserved(self):
         unit, link = self.install("omawake", "/home/user/dev/omawake")
@@ -184,7 +236,7 @@ esac
             self.assertIn("When = PreTransaction", hook)
             self.assertIn("AbortOnFail", hook)
             self.assertIn(f"Exec = /usr/lib/{app}/package-remove {app}", hook)
-            self.assertIn("pkgrel=2", (directory / "PKGBUILD").read_text())
+            self.assertIn("pkgrel=3", (directory / "PKGBUILD").read_text())
             scripts.append((directory / "package-remove").read_bytes())
         self.assertEqual(*scripts)
 

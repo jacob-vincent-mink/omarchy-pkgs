@@ -42,7 +42,13 @@ remove_for_user() {
     load_state=$(systemctl --user show "$unit" --property=LoadState --value) || return 1
     if [[ $load_state != not-found ]]; then
       systemctl --user stop "$unit" || return 1
-      systemctl --user reset-failed "$unit" || return 1
+      # A unit that had failed stays failed once it is stopped, which is the one
+      # state systemd will reset. For every other state it answers that the unit
+      # is not loaded and exits non-zero, so the reset is asked for only where it
+      # applies: a healthy unit leaving the transaction never aborts a removal.
+      if [[ $(systemctl --user show "$unit" --property=ActiveState --value) == failed ]]; then
+        systemctl --user reset-failed "$unit" || return 1
+      fi
       # Disabling also removes enablement links outside the normal target.
       systemctl --user disable "$unit" || return 1
     fi
