@@ -9,6 +9,26 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Characters that make systemd's shell_maybe_quote() quote a value, a copy of
+# SHELL_NEED_ESCAPE, GLOB_CHARS and the rest of SHELL_NEED_QUOTES in escape.h.
+SHELL_NEED_QUOTES = '"\\`$*?[]' + "'()<>|&;!"
+
+
+def systemd_environment_value(value):
+    r"""Return VALUE as ``systemctl show-environment`` would print it.
+
+    print_variable() in systemctl-set-environment.c hands every value to
+    shell_maybe_quote(SHELL_ESCAPE_POSIX): one made of ordinary characters comes
+    out as it is, anything else is enclosed in $'...' with \ and ' each
+    preceded by a backslash.  A fixture that only ever emitted plain values
+    would hide from the helper what a real manager answers for a path with a
+    space in it.
+    """
+    if not any(c in SHELL_NEED_QUOTES or c.isspace() or ord(c) < 0x20 or c == "\x7f"
+               for c in value):
+        return value
+    return "$'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
 
 class Removal(unittest.TestCase):
     def setUp(self):
@@ -27,7 +47,10 @@ class Removal(unittest.TestCase):
         self.executable("systemctl", '''#!/bin/bash
 printf '%s\\n' "$*" >> "$CALLS"
 case "$*" in
-  *show-environment*) [[ -z ${MANAGER_FAIL-} ]] || exit 1; echo "XDG_CONFIG_HOME=${CONFIG_HOME-}" ;;
+  *show-environment*) [[ -z ${MANAGER_FAIL-} ]] || exit 1
+    # print_variable() prints every value the way a shell would read it, so the
+    # fixture, not this stub, decides how the value is quoted.
+    echo "XDG_CONFIG_HOME=${CONFIG_HOME_RAW-${CONFIG_HOME-}}" ;;
   *property=ExecStart*) echo "${EFFECTIVE-}" ;;
   *property=LoadState*) echo "${LOAD_STATE-loaded}" ;;
   # A unit that failed stays failed after it is stopped, and systemd refuses
@@ -193,13 +216,81 @@ esac
         self.assertIn("--user omawake", self.log.read_text())
 
     def test_offline_executable_overrides_are_preserved(self):
-        unit, link = self.install("omawake")
-        dropins = Path(str(unit) + ".d")
-        dropins.mkdir()
-        (dropins / "override.conf").write_text("[Service]\nExecStart=\nExecStart=/home/user/build/omawake daemon\n")
-        self.assertEqual(self.run_remove("omawake").returncode, 0)
-        self.assertTrue(unit.exists())
-        self.assertTrue(link.is_symlink())
+        for app in ("omawake", "omaspeak"):
+            for spacing in ("ExecStart=\nExecStart={command}",
+                           # systemd's parser throws the whitespace around an
+                           # assignment away, so both of these spellings still
+                           # name a development build, exactly as the first does.
+                           "ExecStart =\nExecStart = {command}",
+                           "\tExecStart\t=\t{command}"):
+                unit, link = self.install(app)
+                dropins = Path(str(unit) + ".d")
+                dropins.mkdir(exist_ok=True)
+                (dropins / "override.conf").write_text("[Service]\n" + spacing.format(
+                    command=f"/home/user/build/{app} daemon") + "\n")
+                try:
+                    with self.subTest(app=app, spacing=spacing):
+                        self.assertEqual(self.run_remove(app).returncode, 0)
+                        self.assertTrue(unit.exists(), "removed a service with an override")
+                        self.assertTrue(link.is_symlink(), "unlinked a service with an override")
+                finally:
+                    unit.unlink(missing_ok=True)
+                    link.unlink(missing_ok=True)
+        self.assertFalse(self.log.exists(), "offline cleanup contacted systemd")
+
+    def test_shell_quoted_manager_config_home_is_resolved(self):
+        self.online()
+        default_units = self.units
+        for app in ("omawake", "omaspeak"):
+            config_home = self.home / f"{app} custom's \\ config"
+            self.units = config_home / "systemd/user"
+            self.units.mkdir(parents=True)
+            unit, link = self.install(app)
+            # A unit in the directory the manager reads nothing from is no unit of
+            # the manager's, and the helper has no business reaching for it.
+            stray = default_units / f"{app}.service"
+            stray.write_text(f'[Service]\nExecStart="/usr/bin/{app}" daemon\n')
+            printed = self.env["CONFIG_HOME_RAW"] = systemd_environment_value(str(config_home))
+            with self.subTest(app=app, printed=printed):
+                self.assertTrue(printed.startswith("$'") and printed.endswith("'"),
+                                "a path of spaces is not what a plain value looks like")
+                result = self.run_remove(app)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(unit.exists())
+                self.assertFalse(link.is_symlink())
+                self.assertTrue(stray.is_file(), "guessed at a directory no manager reads")
+        del self.env["CONFIG_HOME_RAW"]
+
+    def test_unreadable_manager_config_home_aborts_the_cleanup(self):
+        self.online()
+        for app in ("omawake", "omaspeak"):
+            unit, link = self.install(app)
+            # A control character inside the path cuts a quoted value across two
+            # lines of the printout, so no line carries it whole: the helper is
+            # left without any directory it could have read, and may not clear away
+            # the units of the one it would have to guess at.
+            self.env["CONFIG_HOME_RAW"] = "$'" + str(self.home / f"broken {app} config")
+            with self.subTest(app=app):
+                result = self.run_remove(app)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertTrue(unit.exists())
+                self.assertTrue(link.is_symlink())
+                self.assertNotIn(" stop ", self.log.read_text())
+        del self.env["CONFIG_HOME_RAW"]
+
+    def test_relative_manager_config_home_keeps_the_default_directory(self):
+        self.online()
+        for app in ("omawake", "omaspeak"):
+            unit, link = self.install(app)
+            # An XDG_CONFIG_HOME that is not absolute is no setting at all: the
+            # manager itself reads the home's .config directory then.
+            self.env["CONFIG_HOME_RAW"] = systemd_environment_value(f"relative {app} config")
+            with self.subTest(app=app):
+                result = self.run_remove(app)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(unit.exists())
+                self.assertFalse(link.is_symlink())
+        del self.env["CONFIG_HOME_RAW"]
 
     def test_packaging_installs_hooks_and_helpers(self):
         import shutil
@@ -236,7 +327,7 @@ esac
             self.assertIn("When = PreTransaction", hook)
             self.assertIn("AbortOnFail", hook)
             self.assertIn(f"Exec = /usr/lib/{app}/package-remove {app}", hook)
-            self.assertIn("pkgrel=3", (directory / "PKGBUILD").read_text())
+            self.assertIn("pkgrel=4", (directory / "PKGBUILD").read_text())
             scripts.append((directory / "package-remove").read_bytes())
         self.assertEqual(*scripts)
 

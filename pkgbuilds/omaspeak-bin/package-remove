@@ -2,12 +2,50 @@
 # Invoked only by the package's Remove/PreTransaction ALPM hook.
 set -eu
 
+# systemd's configuration parser throws the whitespace around an assignment away
+# (parse_line() runs both halves through strstrip()), so a drop-in written as
+#   ExecStart = /home/alice/build/omawake daemon
+# picks the executable just as surely as the unspaced form does.
+readonly execstart_assignment='^[[:space:]]*ExecStart[[:space:]]*='
+
 owned_unit() {
   local commands
   [[ -f $1 && ! -L $1 ]] || return 1
+  # Only a unit in the very shape the application generates is ever deleted;
+  # anything else, however it is spaced, stays somebody's own file.
   commands=$(grep '^ExecStart=' "$1") || return 1
   [[ $commands != *$'\n'* ]] || return 1
   grep -Eq "^ExecStart=\"?/usr/bin/$2\"?([[:space:]]|$)" <<< "$commands"
+}
+
+# systemctl show-environment prints every value the way a shell would read it:
+# print_variable() hands the text to shell_maybe_quote(SHELL_ESCAPE_POSIX),
+# which leaves an ordinary value as it is and encloses anything else in $'...',
+# where only \ and ' carry a backslash.  Read such a value back character by
+# character, so that it never becomes shell syntax.  The result lands in
+# unquoted_value; a value that is neither of those two forms is refused, because
+# guessing where a person keeps their units is not what this helper is for.
+unquote_manager_value() {
+  local text=$1 decoded=
+  if [[ $text != '$'* ]]; then
+    unquoted_value=$text
+    return 0
+  fi
+  [[ $text == \$\'*\' ]] || return 1
+  text=${text:2:${#text}-3}
+  while [[ -n $text ]]; do
+    if [[ ${text:0:1} != \\ ]]; then
+      decoded+=${text:0:1}
+      text=${text:1}
+      continue
+    fi
+    case ${text:1:1} in
+      \\ | "'") decoded+=${text:1:1} ;;
+      *) return 1 ;;
+    esac
+    text=${text:2}
+  done
+  unquoted_value=$decoded
 }
 
 remove_for_user() {
@@ -18,7 +56,17 @@ remove_for_user() {
     # Do not evaluate shell syntax from a user manager's environment.
     manager_environment=$(systemctl --user show-environment) || return 1
     while IFS= read -r line; do
-      case $line in XDG_CONFIG_HOME=/*) config=${line#XDG_CONFIG_HOME=} ;; esac
+      case $line in
+        XDG_CONFIG_HOME=*)
+          if ! unquote_manager_value "${line#XDG_CONFIG_HOME=}"; then
+            echo ":: Cannot tell which directory $user_home's manager reads $unit from; removal aborted." >&2
+            return 1
+          fi
+          # An XDG_CONFIG_HOME that is not an absolute path is no setting at all:
+          # the manager itself falls back to the home's .config directory then.
+          if [[ $unquoted_value == /* ]]; then config=$unquoted_value; fi
+          ;;
+      esac
     done <<< "$manager_environment"
     effective=$(systemctl --user show "$unit" --property=ExecStart --value) || return 1
     if [[ -n $effective && $effective != *"path=/usr/bin/$app ;"* ]]; then
@@ -27,7 +75,7 @@ remove_for_user() {
     fi
   fi
   path="$config/systemd/user/$unit"
-  if ! $online && grep -qs '^ExecStart=' "$path.d/"*.conf; then
+  if ! $online && grep -qs "$execstart_assignment" "$path.d/"*.conf; then
     echo ":: Preserving offline service with an executable override: $path."
     return 0
   fi
