@@ -18,16 +18,15 @@ def systemd_environment_value(value):
     r"""Return VALUE as ``systemctl show-environment`` would print it.
 
     print_variable() in systemctl-set-environment.c hands every value to
-    shell_maybe_quote(SHELL_ESCAPE_POSIX): one made of ordinary characters comes
-    out as it is, anything else is enclosed in $'...' with \ and ' each
-    preceded by a backslash.  A fixture that only ever emitted plain values
-    would hide from the helper what a real manager answers for a path with a
-    space in it.
+    shell_maybe_quote(SHELL_ESCAPE_POSIX) quotes special values and uses
+    cescape_char() for control bytes.
     """
     if not any(c in SHELL_NEED_QUOTES or c.isspace() or ord(c) < 0x20 or c == "\x7f"
                for c in value):
         return value
-    return "$'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+    escapes = dict(zip("\a\b\f\n\r\t\v\\'", (r"\a", r"\b", r"\f", r"\n", r"\r", r"\t", r"\v", r"\\", r"\'")))
+    return "$'" + "".join(escapes.get(c, f"\\{ord(c):03o}" if ord(c) < 0x20 or c == "\x7f" else c)
+                         for c in value) + "'"
 
 
 class Removal(unittest.TestCase):
@@ -261,14 +260,26 @@ esac
                 self.assertTrue(stray.is_file(), "guessed at a directory no manager reads")
         del self.env["CONFIG_HOME_RAW"]
 
+    def test_control_character_manager_config_home_is_resolved(self):
+        self.online()
+        for app in ("omawake", "omaspeak"):
+            for suffix in ("tab\tpath", "newline\npath\n", "\a\b\f\r\v", "\x01\x1b\x7f"):
+                config_home = self.home / (app + suffix)
+                self.units = config_home / "systemd/user"
+                self.units.mkdir(parents=True)
+                unit, link = self.install(app)
+                self.env["CONFIG_HOME_RAW"] = systemd_environment_value(str(config_home))
+                with self.subTest(app=app, suffix=suffix):
+                    result = self.run_remove(app)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertFalse(unit.exists())
+                    self.assertFalse(link.is_symlink())
+
     def test_unreadable_manager_config_home_aborts_the_cleanup(self):
         self.online()
         for app in ("omawake", "omaspeak"):
             unit, link = self.install(app)
-            # A control character inside the path cuts a quoted value across two
-            # lines of the printout, so no line carries it whole: the helper is
-            # left without any directory it could have read, and may not clear away
-            # the units of the one it would have to guess at.
+            # Truncated output must not make cleanup guess at a directory.
             self.env["CONFIG_HOME_RAW"] = "$'" + str(self.home / f"broken {app} config")
             with self.subTest(app=app):
                 result = self.run_remove(app)

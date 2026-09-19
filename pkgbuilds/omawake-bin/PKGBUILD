@@ -28,7 +28,7 @@ install="${pkgname}.install"
 options=('!strip' '!debug')
 
 source=('package-remove' 'remove-user-services.hook')
-sha256sums=('866eaec595a99f320691a00f5f022b860e1dbbafc470eff6301e825a96d66a0e'
+sha256sums=('f1b527448529b45fee2f96b4c0a19b11087377c0ac9f43842bab0d04fcfd3b9f'
             'a0bb2e9de807bdb2cc8d0076eac3c21555c910eb8baa06acfba18fea716b9014')
 
 source_x86_64=("${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz::${url}/releases/download/v${_upstream_ver}/${_pkgname}-${_upstream_ver}-linux-x86_64.tar.xz")

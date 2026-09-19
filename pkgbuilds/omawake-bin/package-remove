@@ -18,15 +18,10 @@ owned_unit() {
   grep -Eq "^ExecStart=\"?/usr/bin/$2\"?([[:space:]]|$)" <<< "$commands"
 }
 
-# systemctl show-environment prints every value the way a shell would read it:
-# print_variable() hands the text to shell_maybe_quote(SHELL_ESCAPE_POSIX),
-# which leaves an ordinary value as it is and encloses anything else in $'...',
-# where only \ and ' carry a backslash.  Read such a value back character by
-# character, so that it never becomes shell syntax.  The result lands in
-# unquoted_value; a value that is neither of those two forms is refused, because
-# guessing where a person keeps their units is not what this helper is for.
+# Decode systemd's shell_maybe_quote() output, including cescape_char() escapes.
+# Never evaluate manager-controlled values as shell syntax.
 unquote_manager_value() {
-  local text=$1 decoded=
+  local text=$1 decoded= character octal
   if [[ $text != '$'* ]]; then
     unquoted_value=$text
     return 0
@@ -41,6 +36,18 @@ unquote_manager_value() {
     fi
     case ${text:1:1} in
       \\ | "'") decoded+=${text:1:1} ;;
+      a | b | f | n | r | t | v)
+        printf -v character '%b' "\\${text:1:1}"
+        decoded+=$character
+        ;;
+      [0-3])
+        octal=${text:1:3}
+        [[ $octal =~ ^[0-3][0-7]{2}$ && $octal != 000 ]] || return 1
+        printf -v character '%b' "\\0$octal"
+        decoded+=$character
+        text=${text:4}
+        continue
+        ;;
       *) return 1 ;;
     esac
     text=${text:2}
