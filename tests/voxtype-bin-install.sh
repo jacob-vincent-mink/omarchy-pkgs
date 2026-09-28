@@ -22,8 +22,8 @@ source "$INSTALL_SCRIPT"
 
 # The hook keeps upgrade state in /tmp, where a real upgrade's could be; move
 # it into the test directory.
-eval "$(declare -f _preserve_or_set_backend | sed "s|/tmp/\.voxtype-backend-upgrade|$SAVED|")"
-declare -f _preserve_or_set_backend | grep -qF "$SAVED" ||
+eval "$(declare -f _preserve_or_set_backend | sed 's|/tmp/\.voxtype-backend-upgrade|${SAVED}|')"
+declare -f _preserve_or_set_backend | grep -qF '${SAVED}' ||
   fail "the hook no longer keeps its upgrade state at /tmp/.voxtype-backend-upgrade"
 
 cpu_flags=""
