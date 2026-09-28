@@ -5,8 +5,8 @@ set -euo pipefail
 
 REPO_ROOT=$(realpath "${BASH_SOURCE[0]%/*}/..")
 INSTALL_SCRIPT="$REPO_ROOT/pkgbuilds/voxtype-bin/voxtype-bin.install"
-SAVED=/tmp/.voxtype-backend-upgrade
 TEST_ROOT=$(mktemp -d)
+SAVED="$TEST_ROOT/backend-upgrade"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 fail() {
@@ -17,13 +17,14 @@ pass() {
   echo "ok - $1"
 }
 
-# The hook keeps upgrade state at a fixed path; a real one means a pacman
-# transaction is mid-flight, and this test must not consume it.
-[[ ! -e $SAVED && ! -L $SAVED ]] || fail "$SAVED exists; is a voxtype-bin upgrade in progress?"
-trap 'rm -rf "$TEST_ROOT" "$SAVED"' EXIT
-
 # shellcheck source=/dev/null
 source "$INSTALL_SCRIPT"
+
+# The hook keeps upgrade state in /tmp, where a real upgrade's could be; move
+# it into the test directory.
+eval "$(declare -f _preserve_or_set_backend | sed "s|/tmp/\.voxtype-backend-upgrade|$SAVED|")"
+declare -f _preserve_or_set_backend | grep -qF "$SAVED" ||
+  fail "the hook no longer keeps its upgrade state at /tmp/.voxtype-backend-upgrade"
 
 cpu_flags=""
 _cpu_has() { [[ " $cpu_flags " == *" $1 "* ]]; }
