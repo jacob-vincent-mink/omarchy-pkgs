@@ -21,32 +21,18 @@ optdepends=(
     'pipewire: audio server (recommended)'
     'pipewire-alsa: ALSA compatibility for PipeWire (required if using PipeWire)'
     'pulseaudio: audio server (alternative to PipeWire)'
+    'ollama: local AI summarization for meeting mode'
+    'gtk4-layer-shell: runtime for the GTK4 on-screen mic visualizer (voxtype-osd-gtk4)'
+    'quickshell: Quickshell-based OSD frontend (opt in via [osd] frontend = "quickshell")'
+)
+# makepkg appends optdepends_$CARCH to optdepends, so accelerator runtimes
+# live here: aarch64 has no GPU or OpenVINO build that could use them.
+optdepends_x86_64=(
     'vulkan-icd-loader: GPU acceleration via Vulkan for Whisper (enable with: voxtype setup gpu --enable)'
     'cuda: GPU acceleration via CUDA 13 for ONNX engines (NVIDIA GPUs, requires driver 580+)'
     'cuda12.6: GPU acceleration via CUDA 12 for ONNX engines (older NVIDIA setups)'
     'rocm-hip-runtime: ROCm runtime (required by migraphx)'
     'migraphx: AMD GPU graph optimization for the MIGraphX execution provider — required for AMD GPU acceleration on ONNX engines'
-    'ollama: local AI summarization for meeting mode'
-    'gtk4-layer-shell: runtime for the GTK4 on-screen mic visualizer (voxtype-osd-gtk4)'
-    'quickshell: Quickshell-based OSD frontend (opt in via [osd] frontend = "quickshell")'
-)
-# aarch64 has no GPU-accelerated binary variant yet (#547 tracks it) — no
-# mainstream consumer arm64 Vulkan/CUDA/ROCm hardware to build and test
-# against. Don't advertise optdepends that can't do anything on this arch.
-optdepends_aarch64=(
-    'wtype: keyboard simulation for Wayland (recommended, best CJK support)'
-    'dotool: keyboard simulation with layout support (KDE/GNOME compatible)'
-    'ydotool: keyboard simulation fallback (X11/TTY support)'
-    'wl-clipboard: clipboard support'
-    'libnotify: desktop notifications'
-    'pipewire: audio server (recommended)'
-    'pipewire-alsa: ALSA compatibility for PipeWire (required if using PipeWire)'
-    'pulseaudio: audio server (alternative to PipeWire)'
-    'ollama: local AI summarization for meeting mode'
-    'gtk4-layer-shell: runtime for the GTK4 on-screen mic visualizer (voxtype-osd-gtk4)'
-    'quickshell: Quickshell-based OSD frontend (opt in via [osd] frontend = "quickshell")'
-)
-optdepends_x86_64=(
     'openvino-genai: OpenVINO GenAI C runtime for the OpenVINO Whisper engine'
     'openvino-intel-npu-plugin: Intel NPU acceleration for the OpenVINO Whisper engine'
 )
